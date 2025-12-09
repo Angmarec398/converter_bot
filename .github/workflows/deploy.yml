@@ -106,10 +106,9 @@ jobs:
 
             - name: Run container
               run: |
-                  ssh -t -i ~/.ssh/id_rsa -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOST }} << 'EOF'
+                  ssh -i ~/.ssh/id_rsa -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOST }} << EOF
                     docker run -d --name=converter_bot --restart=unless-stopped \
                       -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
                       -e DB_PATH=${{ secrets.DB_PATH }} \
-
                       converter_bot:latest
                   EOF
