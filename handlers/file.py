@@ -24,7 +24,7 @@ def _convert_xlsx_to_csv(xlsx_path: Path, csv_path: Path):
 @router.message(F.document)
 async def handle_document(message: Message):
     if not await _is_allowed(message.from_user.id):
-        await message.answer("Привет, я тебя не узнал")
+        await message.answer("Привет, я тебя не узнал. Напиши @it_cifraz чтобы тебе дали доступ")
         return
 
     document = message.document

@@ -10,7 +10,7 @@ router = Router()
 @router.message(~F.document, ~CommandStart())
 async def handle_unknown(message: Message):
     if not await _is_allowed(message.from_user.id):
-        await message.answer("Привет, я тебя не узнал")
+        await message.answer("Привет, я тебя не узнал. Напиши @it_cifraz чтобы тебе дали доступ")
         return
 
     quote = await _other_random_quote()
