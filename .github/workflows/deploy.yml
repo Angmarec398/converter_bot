@@ -1,0 +1,112 @@
+name: Telebot pipeline
+
+on:
+    push:
+        branches:
+            - master
+    pull_request:
+        branches:
+            - master
+
+jobs:
+    tests:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v2
+
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.11"
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+            - name: Run tests
+              run: |
+                  if [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -d tests ]; then pytest; else echo "Tests skipped: no config found"; fi
+
+    connect:
+        needs: tests
+        runs-on: ubuntu-latest
+        steps:
+            - name: Set up SSH
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+                  chmod 600 ~/.ssh/id_rsa
+                  ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+            - name: Check SSH connectivity
+              run: |
+                  ssh -i ~/.ssh/id_rsa -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOST }} 'echo "SSH ok"'
+
+    copy-files:
+        needs: connect
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v2
+
+            - name: Set up SSH
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+                  chmod 600 ~/.ssh/id_rsa
+                  ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+            - name: Prepare remote directory
+              run: |
+                  ssh -i ~/.ssh/id_rsa -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOST }} 'mkdir -p ~/home/converter_bot/'
+
+            - name: Copy files via SSH
+              run: |
+                  scp -i ~/.ssh/id_rsa -P ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no -r ./* ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOST }}:~/home/converter_bot/
+
+    build-image:
+        needs: copy-files
+        runs-on: ubuntu-latest
+        steps:
+            - name: Set up SSH
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+                  chmod 600 ~/.ssh/id_rsa
+                  ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+            - name: Build Docker image on server
+              run: |
+                  ssh -i ~/.ssh/id_rsa -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOST }} << 'EOF'
+                    sudo apt update
+                    sudo apt install -y docker.io
+                    sudo systemctl start docker
+                    sudo systemctl enable docker
+                    docker stop converter_bot || true
+                    docker rm converter_bot || true
+                    cd ~/home/converter_bot
+                    docker build -t converter_bot:latest .
+                  EOF
+
+    run-container:
+        needs: build-image
+        runs-on: ubuntu-latest
+        steps:
+            - name: Set up SSH
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+                  chmod 600 ~/.ssh/id_rsa
+                  ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+            - name: Run container
+              run: |
+                  ssh -t -i ~/.ssh/id_rsa -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOST }} << 'EOF'
+                    docker run -d --name=converter_bot --restart=unless-stopped \
+                      -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
+                      -e DB_PATH=${{ secrets.DB_PATH }} \
+
+                      converter_bot:latest
+                  EOF
